@@ -1,29 +1,41 @@
-#!bin/bash
+#!/bin/bash
 
-#Create a Script to Automate the Installation of Jenkins on the EC2 Instance
-sudo apt-get update -y
+# Log everything (VERY IMPORTANT)
+exec > >(tee /var/log/user-data.log | logger -t user-data -s 2>/dev/console) 2>&1
 
-# Install Java SDK 11
-sudo apt-get install openjdk-11-jdk -y
+# Fail fast
+set -euxo pipefail
 
-# Download and Install Jenkins
-wget -q -O - https://pkg.jenkins.io/debian-stable/jenkins.io.key | sudo apt-key add -
-sudo sh -c 'echo deb http://pkg.jenkins.io/debian-stable binary/ > /etc/apt/sources.list.d/jenkins.list'
-sudo apt-get update -y
+echo "=== STARTING SETUP ==="
 
-# Install packages
-curl -fsSL https://pkg.jenkins.io/debian-stable/jenkins.io-2023.key | sudo tee \
-  /usr/share/keyrings/jenkins-keyring.asc > /dev/null
-echo deb [signed-by=/usr/share/keyrings/jenkins-keyring.asc] \
-  https://pkg.jenkins.io/debian-stable binary/ | sudo tee \
-  /etc/apt/sources.list.d/jenkins.list > /dev/null
-sudo apt-get update -y 
-sudo apt-get install jenkins -y
+export DEBIAN_FRONTEND=noninteractive
 
-# download and install Maven Build Tool
+########################################
+# BASE SETUP
+########################################
+apt-get update -y
+apt-get install -y ca-certificates curl gnupg lsb-release software-properties-common
 
-sudo apt install maven -y
+install -m 0755 -d /etc/apt/keyrings
 
-# Start Jenkins
-sudo systemctl enable jenkins
-sudo systemctl start jenkins
+########################################
+# JAVA + BASIC TOOLS
+########################################
+apt-get install -y openjdk-21-jdk git maven
+# Force the system to use Java 21
+update-java-alternatives --set $(ls -d /usr/lib/jvm/java-1.21.0-openjdk-amd64 | head -n 1)
+########################################
+# JENKINS (2026 UPDATED KEY & FIX)
+########################################
+echo "=== Installing Jenkins ==="
+
+# 1. Download the LATEST 2026 key (Jenkins changed this recently)
+# The backslash '\' is critical to keep this as one command
+curl -fsSL https://pkg.jenkins.io/debian-stable/jenkins.io-2026.key | \
+gpg --dearmor -o /etc/apt/keyrings/jenkins.gpg
+
+# 2. Ensure the key is readable by the system
+chmod a+r /etc/apt/keyrings/jenkins.gpg
+
+# 3. Create the source list pointing to the new .gpg file
+echo "deb [signed-by=/etc/apt/keyrings/jenkins.gpg] https://pkg.jenkins.io/debian-stable binary/" > /etc/apt/sources.list.d/jenkins.list
